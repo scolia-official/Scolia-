@@ -31,6 +31,7 @@ input,select{font:inherit;color:var(--tx);background:var(--bg);border:1px solid 
 .bar{height:8px;background:var(--bd);border-radius:4px;overflow:hidden;min-width:90px}.bar span{display:block;height:100%;background:var(--ok)}
 .ok{color:var(--ok);font-weight:600}.ko{color:var(--ko);font-weight:600}
 :focus-visible{outline:3px solid var(--ac);outline-offset:1px}
+@media print{header,.np{display:none!important}body{background:#fff;color:#000}.card{border:0}}
 </style></head><body>
 <div id="app"></div>
 <script>
@@ -38,7 +39,7 @@ const U="https://ohofvmjmhvkjhvrnwcds.supabase.co",K="sb_publishable_reB5NVsjUfe
 const db=supabase.createClient(U,K);
 const $=s=>document.querySelector(s),esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const F=n=>Number(n).toLocaleString("fr-FR")+" FCFA";
-let P=null,D={cl:[],ma:[],st:[],pa:[]},tab="ac",flash="";
+let P=null,D={cl:[],ma:[],st:[],pa:[],gr:[],ab:[]},tab="ac",flash="",sel={c:"",m:"",t:1,b:""};
 
 async function start(){const{data:{session}}=await db.auth.getSession();session?load():login()}
 function login(msg){$("#app").innerHTML=`<main><div class="card" style="max-width:380px;margin:40px auto"><div class="logo" style="margin-bottom:12px;color:var(--ch)">Scol<i>ia</i></div><label>E-mail<input id="em" type="email" autocomplete="username"></label><label>Mot de passe<input id="pw" type="password" autocomplete="current-password"></label><button class="b" onclick="signin()">Se connecter</button><p class="ko">${esc(msg)}</p></div></main>`}
@@ -53,24 +54,42 @@ async function load(){
  if(p.role!="admin"){shell(`<div class="card"><h3>Bienvenue, ${esc(p.nom)}</h3><p>L’espace ${esc(p.role)} sera disponible très bientôt.</p></div>`);return}
  refresh()}
 async function refresh(){
- const r=await Promise.all([db.from("classes").select("*").order("nom"),db.from("matieres").select("*").order("nom"),db.from("students").select("*, classes(nom)").order("nom"),db.from("payments").select("*").order("paye_le",{ascending:false})]);
+ const r=await Promise.all([db.from("classes").select("*").order("nom"),db.from("matieres").select("*").order("nom"),db.from("students").select("*, classes(nom)").order("nom"),db.from("payments").select("*").order("paye_le",{ascending:false}),db.from("grades").select("*"),db.from("absences").select("*")]);
  const e=r.find(x=>x.error);if(e)flash="Erreur : "+e.error.message;
- D={cl:r[0].data||[],ma:r[1].data||[],st:r[2].data||[],pa:r[3].data||[]};render()}
+ D={cl:r[0].data||[],ma:r[1].data||[],st:r[2].data||[],pa:r[3].data||[],gr:r[4].data||[],ab:r[5].data||[]};render()}
 const paid=s=>D.pa.filter(x=>x.student_id==s.id).reduce((a,x)=>a+Number(x.montant),0);
 const bar=s=>`<div class="bar"><span style="width:${s.frais_total>0?Math.min(100,Math.round(100*paid(s)/s.frais_total)):0}%"></span></div>`;
+const opt=(l,cur,f)=>l.map(x=>`<option value="${x.id}"${x.id==cur?" selected":""}>${esc(f(x))}</option>`).join("");
+const tri=t=>[1,2,3].map(n=>`<option value="${n}"${n==t?" selected":""}>Trimestre ${n}</option>`).join("");
+const gr=(s,m,t)=>D.gr.find(g=>g.student_id==s&&g.matiere_id==m&&g.trimestre==t);
+function moy(s,t){let a=0,b=0;D.ma.forEach(m=>{const g=gr(s,m.id,t);if(g&&g.note!=null){a+=Number(g.note)*Number(m.coef);b+=Number(m.coef)}});return b?a/b:null}
+function rang(s,t){const st=D.st.find(x=>x.id==s),l=D.st.filter(x=>x.class_id==st.class_id&&moy(x.id,t)!=null).sort((x,y)=>moy(y.id,t)-moy(x.id,t)),k=l.findIndex(x=>x.id==s);return k<0?"—":(k+1)+"/"+l.length}
+const mention=m=>m==null?"—":m>=16?"Très bien":m>=14?"Bien":m>=12?"Assez bien":m>=10?"Passable":"Insuffisant";
+function sl(k,v){sel[k]=v;render()}
 function render(){
- const nav=`<div class="nav">${[["ac","Accueil"],["cl","Classes et matières"],["el","Élèves"],["fr","Frais de scolarité"]].map(([k,t])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';render()">${t}</button>`).join("")}</div>`;
+ const nav=`<div class="nav">${[["ac","Accueil"],["cl","Classes et matières"],["el","Élèves"],["fr","Frais de scolarité"],["no","Notes"],["bu","Bulletins"]].map(([k,t])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';render()">${t}</button>`).join("")}</div>`;
  const tot=D.st.reduce((a,s)=>a+Number(s.frais_total),0),enc=D.pa.reduce((a,x)=>a+Number(x.montant),0);
- let h=flash?`<p class="${flash.startsWith("Erreur")?"ko":"ok"}">${esc(flash)}</p>`:"";flash="";
- if(tab=="ac")h+=`<div class="g"><div class="card"><span class="mu">Élèves inscrits</span><b class="big">${D.st.length}</b></div><div class="card"><span class="mu">Classes</span><b class="big">${D.cl.length}</b></div><div class="card"><span class="mu">Encaissé</span><b class="big">${F(enc)}</b></div><div class="card"><span class="mu">Reste à encaisser</span><b class="big">${F(tot-enc)}</b></div></div><div class="card"><p>Commencez par créer vos <b>classes</b> et vos <b>matières</b>, puis inscrivez vos <b>élèves</b>.</p></div>`;
+ let h=flash?`<p class="np ${flash.startsWith("Erreur")?"ko":"ok"}">${esc(flash)}</p>`:"";flash="";
+ if(tab=="ac")h+=`<div class="g"><div class="card"><span class="mu">Élèves inscrits</span><b class="big">${D.st.length}</b></div><div class="card"><span class="mu">Classes</span><b class="big">${D.cl.length}</b></div><div class="card"><span class="mu">Encaissé</span><b class="big">${F(enc)}</b></div><div class="card"><span class="mu">Reste à encaisser</span><b class="big">${F(tot-enc)}</b></div></div><div class="card"><p>Commencez par créer vos <b>classes</b> et vos <b>matières</b>, puis inscrivez vos <b>élèves</b>. Saisissez ensuite les <b>notes</b> et éditez les <b>bulletins</b>.</p></div>`;
  if(tab=="cl")h+=`<div class="card"><h3>Nouvelle classe</h3><div class="row"><label>Nom<input id="cn" placeholder="6e A"></label><label>Année scolaire<input id="ca" value="2026-2027"></label><button class="b" onclick="addCl()">Ajouter la classe</button></div></div><div class="card w"><table><tr><th>Classe</th><th>Année</th></tr>${D.cl.map(c=>`<tr><td>${esc(c.nom)}</td><td>${esc(c.annee)}</td></tr>`).join("")||'<tr><td colspan="2" class="mu">Aucune classe pour le moment.</td></tr>'}</table></div><div class="card"><h3>Nouvelle matière</h3><div class="row"><label>Nom<input id="mn" placeholder="Mathématiques"></label><label>Coefficient<input id="mc" type="number" step="0.5" min="0.5" value="1" style="width:90px"></label><button class="b" onclick="addMa()">Ajouter la matière</button></div></div><div class="card w"><table><tr><th>Matière</th><th>Coef.</th></tr>${D.ma.map(m=>`<tr><td>${esc(m.nom)}</td><td>${m.coef}</td></tr>`).join("")||'<tr><td colspan="2" class="mu">Aucune matière pour le moment.</td></tr>'}</table></div>`;
  if(tab=="el")h+=`<div class="card"><h3>Inscrire un élève</h3><div class="row"><label>Nom complet<input id="sn"></label><label>Classe<select id="sc"><option value="">—</option>${D.cl.map(c=>`<option value="${c.id}">${esc(c.nom)}</option>`).join("")}</select></label><label>Frais annuels (FCFA)<input id="sf" type="number" min="0" value="150000" style="width:130px"></label><button class="b" onclick="addSt()">Inscrire</button></div></div><div class="card w"><table><tr><th>Élève</th><th>Classe</th><th>Frais annuels</th></tr>${D.st.map(s=>`<tr><td>${esc(s.nom)}</td><td>${esc(s.classes?.nom||"—")}</td><td>${F(s.frais_total)}</td></tr>`).join("")||'<tr><td colspan="3" class="mu">Aucun élève inscrit.</td></tr>'}</table></div>`;
  if(tab=="fr")h+=`<div class="card w"><table><tr><th>Élève</th><th>Avancement</th><th>Reste</th><th>Encaisser</th></tr>${D.st.map(s=>{const r=s.frais_total-paid(s);return `<tr><td>${esc(s.nom)}</td><td>${bar(s)}</td><td>${r>0?F(r):'<span class="ok">Soldé</span>'}</td><td><div class="row"><input id="p${s.id}" type="number" min="1" placeholder="Montant" style="width:110px"><select id="m${s.id}"><option>Espèces</option><option>MTN Mobile Money</option><option>Airtel Money</option></select><button class="b" onclick="pay('${s.id}')">Valider</button></div></td></tr>`}).join("")||'<tr><td colspan="4" class="mu">Inscrivez d’abord des élèves.</td></tr>'}</table></div>`;
+ if(tab=="no"){const c=sel.c||D.cl[0]?.id,m=sel.m||D.ma[0]?.id,t=sel.t;
+  h+=D.cl.length&&D.ma.length?`<div class="card"><div class="row"><label>Classe<select onchange="sl('c',this.value)">${opt(D.cl,c,x=>x.nom)}</select></label><label>Matière<select onchange="sl('m',this.value)">${opt(D.ma,m,x=>x.nom)}</select></label><label>Période<select onchange="sl('t',+this.value)">${tri(t)}</select></label></div></div><div class="card w"><table><tr><th>Élève</th><th>Note /20</th><th>Appréciation</th></tr>${D.st.filter(s=>s.class_id==c).map(s=>{const g=gr(s.id,m,t);return `<tr><td>${esc(s.nom)}</td><td><input id="n${s.id}" type="number" min="0" max="20" step="0.25" value="${g?.note??""}" style="width:80px"></td><td><input id="a${s.id}" value="${esc(g?.appreciation||"")}" style="width:100%;min-width:150px"></td></tr>`}).join("")||'<tr><td colspan="3" class="mu">Aucun élève dans cette classe.</td></tr>'}</table><p><button class="b" onclick="saveN('${c}','${m}',${t})">Enregistrer les notes</button></p></div>`:`<div class="card"><p>Créez d’abord au moins une classe et une matière.</p></div>`}
+ if(tab=="bu"){const sid=sel.b||D.st[0]?.id,t=sel.t,s=D.st.find(x=>x.id==sid);
+  h+=s?`<div class="card np"><div class="row"><label>Élève<select onchange="sl('b',this.value)">${opt(D.st,sid,x=>x.nom)}</select></label><label>Période<select onchange="sl('t',+this.value)">${tri(t)}</select></label><button class="b" onclick="print()">Imprimer</button></div></div><div class="card"><h3>Bulletin de ${esc(s.nom)} <span class="mu">${esc(s.classes?.nom||"")} · Trimestre ${t}</span></h3><div class="w"><table><tr><th>Matière</th><th>Coef.</th><th>Note /20</th><th>Appréciation</th></tr>${D.ma.map(m=>{const g=gr(sid,m.id,t);return `<tr><td>${esc(m.nom)}</td><td>${m.coef}</td><td>${g?.note??"—"}</td><td>${esc(g?.appreciation||"")}</td></tr>`}).join("")}</table></div><p><b>Moyenne :</b> ${moy(sid,t)==null?"—":moy(sid,t).toFixed(2)} /20 &nbsp; <b>Rang :</b> ${rang(sid,t)} &nbsp; <b>Absences :</b> ${D.ab.filter(a=>a.student_id==sid).length}</p><p class="mu">Mention : ${mention(moy(sid,t))}</p></div><div class="card np"><h3>Enregistrer une absence</h3><div class="row"><label>Date<input id="ad" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Motif (facultatif)<input id="am"></label><button class="b" onclick="addAb('${sid}')">Ajouter</button></div></div>`:`<div class="card"><p>Inscrivez d’abord des élèves.</p></div>`}
  shell(h,nav)}
 async function ins(t,row){const{error}=await db.from(t).insert(row);flash=error?"Erreur : "+error.message:"Enregistré.";refresh()}
 function addCl(){const n=$("#cn").value.trim();if(!n)return $("#cn").focus();ins("classes",{school_id:P.school_id,nom:n,annee:$("#ca").value.trim()||"2026-2027"})}
 function addMa(){const n=$("#mn").value.trim();if(!n)return $("#mn").focus();ins("matieres",{school_id:P.school_id,nom:n,coef:+$("#mc").value||1})}
 function addSt(){const n=$("#sn").value.trim();if(!n)return $("#sn").focus();ins("students",{school_id:P.school_id,nom:n,class_id:$("#sc").value||null,frais_total:+$("#sf").value||0})}
 function pay(id){const m=+$("#p"+id).value;if(!(m>0))return $("#p"+id).focus();ins("payments",{student_id:id,montant:m,mode:$("#m"+id).value})}
+function addAb(id){const d=$("#ad").value;if(!d)return;ins("absences",{student_id:id,jour:d,motif:$("#am").value.trim()||null})}
+async function saveN(c,m,t){
+ const rows=D.st.filter(s=>s.class_id==c).map(s=>({s,v:$("#n"+s.id).value})).filter(x=>x.v!=="").map(x=>({student_id:x.s.id,matiere_id:m,trimestre:t,note:Math.max(0,Math.min(20,+x.v)),appreciation:$("#a"+x.s.id).value.trim()||null}));
+ if(!rows.length){flash="Erreur : aucune note à enregistrer.";return render()}
+ const{error}=await db.from("grades").upsert(rows,{onConflict:"student_id,matiere_id,trimestre"});
+ flash=error?"Erreur : "+error.message:"Notes enregistrées.";refresh()}
 start();
 </script></body></html>
+
