@@ -40,13 +40,13 @@ const db=supabase.createClient(U,K);
 const $=s=>document.querySelector(s),esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const F=n=>Number(n).toLocaleString("fr-FR")+" FCFA",dt=d=>String(d).split("-").reverse().join("/");
 const RL={admin:"Administrateur",enseignant:"Enseignant",parent:"Parent",eleve:"Élève"};
-let P=null,D={cl:[],ma:[],st:[],pa:[],gr:[],ab:[],pr:[],ta:[]},tab="ac",flash="",sel={c:"",m:"",t:1,b:"",r:"enseignant"};
+let pw=false,P=null,D={cl:[],ma:[],st:[],pa:[],gr:[],ab:[],pr:[],ta:[]},tab="ac",flash="",sel={c:"",m:"",t:1,b:"",r:"enseignant"};
 
 async function start(){const{data:{session}}=await db.auth.getSession();session?load():login()}
 function login(msg){$("#app").innerHTML=`<main><div class="card" style="max-width:380px;margin:40px auto"><div class="logo" style="margin-bottom:12px;color:var(--ch)">Scol<i>ia</i></div><label>E-mail<input id="em" type="email" autocomplete="username" autocapitalize="none"></label><label>Mot de passe<input id="pw" type="password" autocomplete="current-password"></label><button class="b" onclick="signin()">Se connecter</button><p class="ko">${esc(msg)}</p></div></main>`}
 async function signin(){const{error}=await db.auth.signInWithPassword({email:$("#em").value.trim(),password:$("#pw").value});error?login("E-mail ou mot de passe incorrect."):load()}
-async function out(){await db.auth.signOut();P=null;login()}
-function shell(h,nav){const s=P.schools?.nom||"";$("#app").innerHTML=`<header><div class="top"><div class="logo">Scol<i>ia</i></div><div class="who">${esc(s)}<br>${esc(P.nom)} · <button onclick="out()">Se déconnecter</button></div></div>${nav||""}</header><main>${h}</main>`}
+async function out(){await db.auth.signOut();P=null;pw=false;login()}
+function shell(h,nav){const s=P.schools?.nom||"";$("#app").innerHTML=`<header><div class="top"><div class="logo">Scol<i>ia</i></div><div class="who">${esc(s)}<br>${esc(P.nom)} · <button onclick="pw=!pw;render()">Mot de passe</button> · <button onclick="out()">Se déconnecter</button></div></div>${nav||""}</header><main>${h}</main>`}
 async function load(){
  const{data:{user}}=await db.auth.getUser();
  const{data:p}=await db.from("profiles").select("*, schools(nom)").eq("id",user.id).maybeSingle();
@@ -68,6 +68,17 @@ function moy(s,t){let a=0,b=0;D.ma.forEach(m=>{const g=gr(s,m.id,t);if(g&&g.note
 function rang(s,t){const st=D.st.find(x=>x.id==s),l=D.st.filter(x=>x.class_id==st.class_id&&moy(x.id,t)!=null).sort((x,y)=>moy(y.id,t)-moy(x.id,t)),k=l.findIndex(x=>x.id==s);return k<0?"—":(k+1)+"/"+l.length}
 const mention=m=>m==null?"—":m>=16?"Très bien":m>=14?"Bien":m>=12?"Assez bien":m>=10?"Passable":"Insuffisant";
 function sl(k,v){sel[k]=v;render()}
+const PWC=`<div class="card np"><h3>Changer mon mot de passe</h3><div class="row"><label>Nouveau mot de passe<input id="p1" type="password" autocomplete="new-password" placeholder="8 caractères minimum"></label><label>Confirmer<input id="p2" type="password" autocomplete="new-password"></label><button class="b" onclick="setPw()">Enregistrer</button></div></div>`;
+async function setPw(){
+ const a=$("#p1").value,b=$("#p2").value;
+ if(a.length<8){flash="Erreur : le mot de passe doit contenir au moins 8 caractères.";return render()}
+ if(a!==b){flash="Erreur : les deux mots de passe ne sont pas identiques.";return render()}
+ const{error}=await db.auth.updateUser({password:a});
+ let m=error?error.message:"";
+ if(/different/i.test(m))m="le nouveau mot de passe doit être différent de l’ancien.";
+ else if(/weak|short|least/i.test(m))m="mot de passe trop faible, choisissez-en un plus long ou plus varié.";
+ flash=error?"Erreur : "+m:"Mot de passe modifié avec succès.";
+ if(!error)pw=false;render()}
 function bul(sid,t){const s=D.st.find(x=>x.id==sid),m=moy(sid,t);if(!s)return"";
  return `<div class="card"><h3>Bulletin de ${esc(s.nom)} <span class="mu">${esc(s.classes?.nom||"")} · Trimestre ${t}</span></h3><div class="w"><table><tr><th>Matière</th><th>Coef.</th><th>Note /20</th><th>Appréciation</th></tr>${D.ma.map(x=>{const g=gr(sid,x.id,t);return `<tr><td>${esc(x.nom)}</td><td>${x.coef}</td><td>${g?.note??"—"}</td><td>${esc(g?.appreciation||"")}</td></tr>`}).join("")}</table></div><p><b>Moyenne :</b> ${m==null?"—":m.toFixed(2)} /20 &nbsp; ${fam()?"":`<b>Rang :</b> ${rang(sid,t)} &nbsp; `}<b>Absences :</b> ${D.ab.filter(a=>a.student_id==sid).length}</p><p class="mu">Mention : ${mention(m)}</p></div>`}
 function frais(s){const r=s.frais_total-paid(s),p=D.pa.filter(x=>x.student_id==s.id);
@@ -81,6 +92,7 @@ function render(){
  const nav=T.length?`<div class="nav">${T.map(([k,t])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';render()">${t}</button>`).join("")}</div>`:"";
  const tot=D.st.reduce((a,s)=>a+Number(s.frais_total),0),enc=D.pa.reduce((a,x)=>a+Number(x.montant),0);
  let h=flash?`<p class="np ${flash.startsWith("Erreur")?"ko":"ok"}">${esc(flash)}</p>`:"";flash="";
+ if(pw)h+=PWC;
  if(fam())h+=famille();
  if(tab=="ac"&&A)h+=`<div class="g"><div class="card"><span class="mu">Élèves inscrits</span><b class="big">${D.st.length}</b></div><div class="card"><span class="mu">Classes</span><b class="big">${D.cl.length}</b></div><div class="card"><span class="mu">Encaissé</span><b class="big">${F(enc)}</b></div><div class="card"><span class="mu">Reste à encaisser</span><b class="big">${F(tot-enc)}</b></div></div><div class="card"><p>Commencez par créer vos <b>classes</b> et vos <b>matières</b>, puis inscrivez vos <b>élèves</b>. Saisissez ensuite les <b>notes</b>, éditez les <b>bulletins</b> et créez les <b>comptes</b> de vos enseignants et des familles.</p></div>`;
  if(tab=="cl"&&A)h+=`<div class="card"><h3>Nouvelle classe</h3><div class="row"><label>Nom<input id="cn" placeholder="6e A"></label><label>Année scolaire<input id="ca" value="2026-2027"></label><button class="b" onclick="addCl()">Ajouter la classe</button></div></div><div class="card w"><table><tr><th>Classe</th><th>Année</th></tr>${D.cl.map(c=>`<tr><td>${esc(c.nom)}</td><td>${esc(c.annee)}</td></tr>`).join("")||'<tr><td colspan="2" class="mu">Aucune classe pour le moment.</td></tr>'}</table></div><div class="card"><h3>Nouvelle matière</h3><div class="row"><label>Nom<input id="mn" placeholder="Mathématiques"></label><label>Coefficient<input id="mc" type="number" step="0.5" min="0.5" value="1" style="width:90px"></label><button class="b" onclick="addMa()">Ajouter la matière</button></div></div><div class="card w"><table><tr><th>Matière</th><th>Coef.</th></tr>${D.ma.map(m=>`<tr><td>${esc(m.nom)}</td><td>${m.coef}</td></tr>`).join("")||'<tr><td colspan="2" class="mu">Aucune matière pour le moment.</td></tr>'}</table></div>`;
