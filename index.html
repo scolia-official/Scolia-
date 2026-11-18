@@ -40,7 +40,7 @@ const db=supabase.createClient(U,K);
 const $=s=>document.querySelector(s),esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const F=n=>Number(n).toLocaleString("fr-FR")+" FCFA",dt=d=>String(d).split("-").reverse().join("/");
 const RL={admin:"Administrateur",enseignant:"Enseignant",parent:"Parent",eleve:"Élève"};
-let ed={},pw=false,P=null,D={cl:[],ma:[],st:[],pa:[],gr:[],ab:[],pr:[],ta:[],an:[]},tab="ac",flash="",sel={c:"",m:"",t:1,b:"",r:"enseignant"};
+let PR=null,PRL=false,ed={},pw=false,P=null,D={cl:[],ma:[],st:[],pa:[],gr:[],ab:[],pr:[],ta:[],an:[]},tab="ac",flash="",sel={c:"",m:"",t:1,b:"",r:"enseignant"};
 
 async function start(){const{data:{session}}=await db.auth.getSession();session?load():login()}
 function login(msg){$("#app").innerHTML=`<main><div class="card" style="max-width:380px;margin:40px auto"><div class="logo" style="margin-bottom:12px;color:var(--tx)">Scol<i>ia</i></div><label>E-mail<input id="em" type="email" autocomplete="username" autocapitalize="none"></label><label>Mot de passe<input id="pw" type="password" autocomplete="current-password"></label><button class="b" onclick="signin()">Se connecter</button><p class="ko">${esc(msg)}</p><p><button style="background:none;border:0;color:var(--tx);font:inherit;text-decoration:underline;cursor:pointer;padding:0" onclick="inscr()">Inscrire mon école</button></p></div></main>`}
@@ -59,9 +59,9 @@ async function out(){await db.auth.signOut();P=null;pw=false;login()}
 function shell(h,nav){const s=P.schools?.nom||"";$("#app").innerHTML=`<header><div class="top"><div class="logo">Scol<i>ia</i></div><div class="who">${esc(s)}<br>${esc(P.nom)} · <button onclick="pw=!pw;render()">Mot de passe</button> · <button onclick="out()">Se déconnecter</button></div></div>${nav||""}</header><main>${h}</main>`}
 async function load(){
  const{data:{user}}=await db.auth.getUser();
- const{data:p}=await db.from("profiles").select("*, schools(nom)").eq("id",user.id).maybeSingle();
+ const{data:p}=await db.from("profiles").select("*, schools(nom,essai_fin,paye_jusqu_au,suspendu)").eq("id",user.id).maybeSingle();
  if(!p){P={nom:"",schools:null,role:""};shell(`<div class="card"><p>Ce compte n’est relié à aucune école. Contactez l’administration.</p></div>`);return}
- P=p;tab=p.role=="enseignant"?"no":"ac";refresh()}
+ P=p;tab=p.role=="enseignant"?"no":"ac";const{data:ow}=await db.from("owners").select("user_id").maybeSingle();P.owner=!!ow;refresh()}
 async function refresh(){
  const r=await Promise.all([db.from("classes").select("*").order("nom"),db.from("matieres").select("*").order("nom"),db.from("students").select("*, classes(nom)").order("nom"),db.from("payments").select("*").order("paye_le",{ascending:false}),db.from("grades").select("*"),db.from("absences").select("*"),db.from("profiles").select("*").order("nom"),db.from("teacher_assignments").select("*"),db.from("announcements").select("*").order("cree_le",{ascending:false})]);
  const e=r.find(x=>x.error);if(e)flash="Erreur : "+e.error.message;
@@ -98,10 +98,12 @@ function famille(){const sid=sel.b||D.st[0]?.id,s=D.st.find(x=>x.id==sid),t=sel.
  const ab=D.ab.filter(a=>a.student_id==sid).sort((x,y)=>y.jour.localeCompare(x.jour));
  return `${annList(5)}<div class="card np"><div class="row">${D.st.length>1?`<label>Enfant<select onchange="sl('b',this.value)">${opt(D.st,sid,x=>x.nom)}</select></label>`:""}<label>Période<select onchange="sl('t',+this.value)">${tri(t)}</select></label><button class="b" onclick="print()">Imprimer le bulletin</button></div></div>${bul(sid,t)}<div class="card"><h3>Absences</h3>${ab.length?`<table>${ab.map(a=>`<tr><td>${dt(a.jour)}</td><td>${esc(a.motif||"")}</td></tr>`).join("")}</table>`:'<p class="mu">Aucune absence enregistrée.</p>'}</div>${P.role=="parent"?frais(s):""}`}
 function render(){
- const A=adm(),T=A?[["ac","Accueil"],["cl","Classes et matières"],["el","Élèves"],["fr","Frais de scolarité"],["no","Notes"],["bu","Bulletins"],["co","Comptes"],["an","Annonces"]]:P.role=="enseignant"?[["no","Notes"],["bu","Bulletins"],["an","Annonces"]]:[];
+ const A=adm();let T=A?[["ac","Accueil"],["cl","Classes et matières"],["el","Élèves"],["fr","Frais de scolarité"],["no","Notes"],["bu","Bulletins"],["co","Comptes"],["an","Annonces"]]:P.role=="enseignant"?[["no","Notes"],["bu","Bulletins"],["an","Annonces"]]:[];
+ if(P.owner)T=T.concat([["pro","Propriétaire"]]);
  const nav=T.length?`<div class="nav">${T.map(([k,t])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';render()">${t}</button>`).join("")}</div>`:"";
  const tot=D.st.reduce((a,s)=>a+Number(s.frais_total),0),enc=D.pa.reduce((a,x)=>a+Number(x.montant),0);
  let h=flash?`<p class="np ${flash.startsWith("Erreur")?"ko":"ok"}">${esc(flash)}</p>`:"";flash="";
+ h=abo()+h;
  if(pw)h+=PWC;
  if(fam())h+=famille();
  if(tab=="ac"&&A)h+=`<div class="g"><div class="card"><span class="mu">Élèves inscrits</span><b class="big">${D.st.length}</b></div><div class="card"><span class="mu">Classes</span><b class="big">${D.cl.length}</b></div><div class="card"><span class="mu">Encaissé</span><b class="big">${F(enc)}</b></div><div class="card"><span class="mu">Reste à encaisser</span><b class="big">${F(tot-enc)}</b></div></div><div class="card"><p>Commencez par créer vos <b>classes</b> et vos <b>matières</b>, puis inscrivez vos <b>élèves</b>. Saisissez ensuite les <b>notes</b>, éditez les <b>bulletins</b> et créez les <b>comptes</b> de vos enseignants et des familles.</p></div>`;
@@ -115,8 +117,9 @@ function render(){
  if(tab=="co"&&A){const r=sel.r;
   h+=`<div class="card"><h3>Nouveau compte</h3><div class="row" style="margin-bottom:12px">${[["enseignant","Enseignant"],["parent","Parent"],["eleve","Élève"]].map(([k,t])=>`<button class="b" style="opacity:${r==k?1:.45}" onclick="sl('r','${k}')">${t}</button>`).join("")}</div><div class="row"><label>Nom complet<input id="kn"></label><label>E-mail<input id="ke" type="email" autocapitalize="none"></label><label>Mot de passe provisoire<input id="kp" placeholder="8 caractères minimum"></label>${r=="enseignant"?`<label>Classe<select id="kc"><option value="">—</option>${opt(D.cl,"",x=>x.nom)}</select></label><label>Matière<select id="km"><option value="">—</option>${opt(D.ma,"",x=>x.nom)}</select></label>`:`<label>${r=="parent"?"Parent de l’élève":"Compte de l’élève"}<select id="ks">${opt(D.st,"",x=>x.nom)}</select></label>`}<button class="b" onclick="createAcc()">Créer le compte</button></div></div><div class="card w"><table><tr><th>Nom</th><th>Rôle</th><th></th></tr>${D.pr.map(p=>`<tr><td>${esc(p.nom)}</td><td>${RL[p.role]||p.role}</td><td>${p.role=="admin"?"":`<button class="b" style="background:var(--ko)" onclick="delAcc('${p.id}')">Supprimer</button>`}</td></tr>`).join("")}</table></div>`+ass()}
  if(tab=="an"&&!fam())h+=annonces(A);
+ if(tab=="pro"&&P.owner)h+=proprio();
  shell(h,nav)}
-async function ins(t,row){const{error}=await db.from(t).insert(row);flash=error?"Erreur : "+(/duplicate/i.test(error.message)?"cet enregistrement existe déjà.":error.message):"Enregistré.";refresh()}
+async function ins(t,row){const{error}=await db.from(t).insert(row);flash=error?"Erreur : "+friendly(error.message):"Enregistré.";refresh()}
 function addCl(){const n=$("#cn").value.trim();if(!n)return $("#cn").focus();ins("classes",{school_id:P.school_id,nom:n,annee:$("#ca").value.trim()||"2026-2027"})}
 function addMa(){const n=$("#mn").value.trim();if(!n)return $("#mn").focus();ins("matieres",{school_id:P.school_id,nom:n,coef:+$("#mc").value||1})}
 function addSt(){const n=$("#sn").value.trim();if(!n)return $("#sn").focus();ins("students",{school_id:P.school_id,nom:n,class_id:$("#sc").value||null,frais_total:+$("#sf").value||0})}
@@ -126,7 +129,7 @@ async function saveN(c,m,t){
  const rows=D.st.filter(s=>s.class_id==c).map(s=>({s,v:$("#n"+s.id).value})).filter(x=>x.v!=="").map(x=>({student_id:x.s.id,matiere_id:m,trimestre:t,note:Math.max(0,Math.min(20,+x.v)),appreciation:$("#a"+x.s.id).value.trim()||null}));
  if(!rows.length){flash="Erreur : aucune note à enregistrer.";return render()}
  const{error}=await db.from("grades").upsert(rows,{onConflict:"student_id,matiere_id,trimestre"});
- flash=error?"Erreur : "+error.message:"Notes enregistrées.";refresh()}
+ flash=error?"Erreur : "+friendly(error.message):"Notes enregistrées.";refresh()}
 function ass(){const te=D.pr.filter(p=>p.role=="enseignant"),nm=(l,id)=>l.find(x=>x.id==id)?.nom||"?";
  return `<div class="card"><h3>Attributions des enseignants</h3>${te.length&&D.cl.length&&D.ma.length?`<div class="row"><label>Enseignant<select id="at">${opt(te,"",x=>x.nom)}</select></label><label>Classe<select id="ac2">${opt(D.cl,"",x=>x.nom)}</select></label><label>Matière<select id="am2">${opt(D.ma,"",x=>x.nom)}</select></label><button class="b" onclick="addTa()">Attribuer</button></div>`:'<p class="mu">Créez d’abord des enseignants, des classes et des matières.</p>'}</div><div class="card w"><table><tr><th>Enseignant</th><th>Classe</th><th>Matière</th><th></th></tr>${D.ta.map(a=>`<tr><td>${esc(nm(D.pr,a.teacher_id))}</td><td>${esc(nm(D.cl,a.class_id))}</td><td>${esc(nm(D.ma,a.matiere_id))}</td><td><button class="b" onclick="delTa('${a.teacher_id}','${a.class_id}','${a.matiere_id}')">Retirer</button></td></tr>`).join("")||'<tr><td colspan="4" class="mu">Aucune attribution.</td></tr>'}</table></div>`}
 function addTa(){ins("teacher_assignments",{teacher_id:$("#at").value,class_id:$("#ac2").value,matiere_id:$("#am2").value})}
@@ -143,13 +146,13 @@ async function saveEd(){
  if(t=="ma")row={nom:v(1),coef:+v(2)||1};
  if(t=="st")row={nom:v(1),class_id:$("#e2").value||null,frais_total:+v(3)||0};
  const{error}=await db.from(TB[t]).update(row).eq("id",ed.id);
- flash=error?"Erreur : "+error.message:"Modification enregistrée.";if(!error)ed={};refresh()}
+ flash=error?"Erreur : "+friendly(error.message):"Modification enregistrée.";if(!error)ed={};refresh()}
 async function del(t,id){
  const q={cl:"Supprimer cette classe ?",ma:"Supprimer cette matière ?",st:"Supprimer cet élève ? Ses notes, absences et paiements seront aussi supprimés.",pa:"Annuler ce paiement ?",ab:"Supprimer cette absence ?",an:"Supprimer cette annonce ?"}[t];
  if(!confirm(q))return;
  const{error}=await db.from(TB[t]).delete().eq("id",id);
  let m=error?error.message:"";
- if(/foreign key|violates/i.test(m))m=t=="cl"?"des élèves sont encore dans cette classe, déplacez-les d’abord.":"cet élément est encore utilisé (des notes existent pour cette matière).";
+ if(/row-level security/i.test(m))m="action refusée (abonnement expiré ou droits insuffisants).";else if(/foreign key|violates/i.test(m))m=t=="cl"?"des élèves sont encore dans cette classe, déplacez-les d’abord.":"cet élément est encore utilisé (des notes existent pour cette matière).";
  flash=error?"Erreur : "+m:"Supprimé.";refresh()}
 function lire(f){if(!f)return;const r=new FileReader();r.onload=()=>{$("#imp").value=String(r.result)};r.readAsText(f)}
 async function importSt(){
@@ -171,6 +174,31 @@ async function importSt(){
 function annList(n,canDel){const l=D.an.slice(0,n);return l.length?`<div class="card"><h3>Annonces</h3>${l.map(a=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd)"><b>${esc(a.titre)}</b> <span class="mu">· ${new Date(a.cree_le).toLocaleDateString("fr-FR")}${a.class_id?" · "+esc(D.cl.find(c=>c.id==a.class_id)?.nom||""):" · Toute l’école"}</span><br>${esc(a.contenu).replace(/\n/g,"<br>")}${canDel?`<br><button class="b" style="background:var(--ko);margin-top:6px" onclick="del('an','${a.id}')">Supprimer</button>`:""}</div>`).join("")}</div>`:""}
 function annonces(A){return (A?`<div class="card"><h3>Nouvelle annonce</h3><div class="row"><label>Titre<input id="at1" style="min-width:220px"></label><label>Destinataires<select id="at2"><option value="">Toute l’école</option>${opt(D.cl,"",x=>x.nom)}</select></label></div><label style="margin-top:10px">Message<textarea id="at3" rows="4" style="width:100%"></textarea></label><button class="b" onclick="addAn()">Publier</button></div>`:"")+(annList(50,A)||`<div class="card"><p class="mu">Aucune annonce pour le moment.</p></div>`)}
 function addAn(){const t=$("#at1").value.trim(),c=$("#at3").value.trim();if(!t||!c){flash="Erreur : renseignez le titre et le message.";return render()}ins("announcements",{school_id:P.school_id,class_id:$("#at2").value||null,titre:t,contenu:c})}
+const friendly=m=>/duplicate/i.test(m)?"cet enregistrement existe déjà.":/row-level security/i.test(m)?"action refusée (abonnement expiré ou droits insuffisants).":m;
+const today=()=>new Date().toISOString().slice(0,10);
+const finAbo=s=>[s.essai_fin,s.paye_jusqu_au].filter(Boolean).sort().pop()||"";
+function abo(){const s=P.schools;if(!s)return"";const f=finAbo(s);
+ if(s.suspendu)return `<p class="np ko">Cet abonnement est suspendu : l’application est en lecture seule. Contactez Scolia.</p>`;
+ if(!f)return"";const j=Math.ceil((new Date(f+"T23:59:59")-new Date())/864e5);
+ if(j<0)return `<p class="np ko">Abonnement expiré le ${dt(f)} : l’application est en lecture seule. Contactez Scolia pour le renouveler.</p>`;
+ if(j<=15)return `<p class="np ko">Votre abonnement se termine le ${dt(f)} (${j} jour${j>1?"s":""}). Contactez Scolia pour le renouveler.</p>`;
+ return""}
+function aboTxt(s){const f=finAbo(s);if(s.suspendu)return `<span class="ko">Suspendu</span>`;if(!f)return `<span class="mu">Sans date</span>`;
+ return f<today()?`<span class="ko">Expiré le ${dt(f)}</span>`:`<span class="ok">Actif jusqu’au ${dt(f)}</span>${s.paye_jusqu_au&&s.paye_jusqu_au>=f?"":` <span class="mu">(essai)</span>`}`}
+async function loadPro(){PRL=true;const{data,error}=await db.functions.invoke("dynamic-function",{body:{action:"proprio_liste"}});
+ if(error){let m;try{m=(await error.context.json()).error}catch(e){m=error.message}PR={err:tr(m||"Erreur inconnue.")}}else PR=data;PRL=false;render()}
+async function pcall(b,ok){const{error}=await db.functions.invoke("dynamic-function",{body:b});let m=null;
+ if(error){try{m=(await error.context.json()).error}catch(e){m=error.message}}
+ flash=m?"Erreur : "+tr(m):ok;PR=null;PRL=false;render()}
+function gerer(s){return `<div class="card"><h3>${esc(s.nom)}</h3><div class="row"><label>Essai jusqu’au<input id="pe" type="date" value="${s.essai_fin||""}"></label><label>Payé jusqu’au<input id="pj" type="date" value="${s.paye_jusqu_au||""}"></label><label>Plan<input id="pp" value="${esc(s.plan||"")}" placeholder="ex. Forfait moyen"></label><label>Montant payé (FCFA)<input id="pm" type="number" min="0" value="${s.montant??""}" style="width:130px"></label></div><label style="margin-top:10px">Note interne (invisible pour l’école)<input id="pn" value="${esc(s.note||"")}"></label><label style="flex-direction:row;align-items:center;gap:8px"><input id="ps" type="checkbox" ${s.suspendu?"checked":""}> Suspendre cette école (lecture seule)</label><div class="row"><button class="b" onclick="ext(3)">+3 mois</button><button class="b" onclick="ext(6)">+6 mois</button><button class="b" onclick="ext(12)">+1 an</button></div><p><button class="b" onclick="saveEc('${s.id}')">Enregistrer</button> <button class="b" style="opacity:.6" onclick="sel.pro='';render()">Fermer</button></p></div>`}
+function ext(m){const v=$("#pj").value,b=v&&v>today()?v:today(),d=new Date(b+"T12:00:00");d.setMonth(d.getMonth()+m);$("#pj").value=d.toISOString().slice(0,10)}
+function saveEc(id){pcall({action:"proprio_ecole_maj",id,champs:{essai_fin:$("#pe").value,paye_jusqu_au:$("#pj").value,plan:$("#pp").value.trim(),montant:$("#pm").value,note:$("#pn").value.trim(),suspendu:$("#ps").checked}},"École mise à jour.")}
+function proprio(){
+ if(PR===null&&!PRL){loadPro();return `<div class="card"><p class="mu">Chargement…</p></div>`}
+ if(!PR)return `<div class="card"><p class="mu">Chargement…</p></div>`;
+ if(PR.err)return `<div class="card"><p class="ko">${esc(PR.err)}</p></div>`;
+ const E=PR.ecoles,C=PR.codes,cur=E.find(x=>x.id==sel.pro),tot=E.reduce((a,s)=>a+s.nb_eleves,0),act=E.filter(s=>!s.suspendu&&finAbo(s)>=today()&&finAbo(s)).length;
+ return `<div class="g"><div class="card"><span class="mu">Écoles clientes</span><b class="big">${E.length}</b></div><div class="card"><span class="mu">Abonnements actifs</span><b class="big">${act}</b></div><div class="card"><span class="mu">Élèves au total</span><b class="big">${tot}</b></div></div><div class="card w"><h3>Écoles</h3><table><tr><th>École</th><th>Responsable</th><th>Abonnement</th><th></th></tr>${E.map(s=>`<tr><td><b>${esc(s.nom)}</b><br><span class="mu">${esc(s.ville||"")} · créée le ${dt(String(s.created_at).slice(0,10))}<br>${s.nb_eleves} élève(s) · ${s.nb_comptes} compte(s)${s.code_utilise?" · code "+esc(s.code_utilise):""}</span></td><td>${s.responsables.map(r=>esc(r.nom)+`<br><span class="mu">${esc(r.email)}</span>`).join("<br>")}</td><td>${aboTxt(s)}${s.plan?`<br><span class="mu">${esc(s.plan)}</span>`:""}</td><td><button class="b" onclick="sel.pro='${s.id}';render()">Gérer</button></td></tr>`).join("")||'<tr><td colspan="4" class="mu">Aucune école.</td></tr>'}</table></div>${cur?gerer(cur):""}<div class="card"><h3>Codes d’inscription</h3><div class="row"><label>Code<input id="nc" autocapitalize="characters" placeholder="ECOLE-XYZ"></label><label>Pour qui ? (facultatif)<input id="nl"></label><label>Utilisations max<input id="nx" type="number" min="1" style="width:100px"></label><button class="b" onclick="pcall({action:'proprio_code_ajout',code:$('#nc').value,libelle:$('#nl').value,max:$('#nx').value},'Code créé.')">Créer</button></div></div><div class="card w"><table><tr><th>Code</th><th>Utilisé</th><th>État</th><th></th></tr>${C.map(c=>`<tr><td><b>${esc(c.code)}</b><br><span class="mu">${esc(c.libelle||"")}</span></td><td>${c.utilisations}${c.max_utilisations?" / "+c.max_utilisations:""}</td><td>${c.actif?'<span class="ok">Actif</span>':'<span class="ko">Désactivé</span>'}</td><td><button class="b" onclick="pcall({action:'proprio_code_maj',code:'${esc(c.code)}',actif:${!c.actif}},'Code mis à jour.')">${c.actif?"Désactiver":"Activer"}</button></td></tr>`).join("")}</table></div>`}
 async function createAcc(){
  const r=sel.r,b={role:r,nom:$("#kn").value.trim(),email:$("#ke").value.trim(),password:$("#kp").value};
  if(r=="enseignant"){b.class_id=$("#kc").value||null;b.matiere_id=$("#km").value||null}else b.student_id=$("#ks").value||null;
